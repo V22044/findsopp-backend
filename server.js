@@ -21,11 +21,23 @@ mongoose
 
 //User index
 const userIndex = new mongoose.Schema({
-  name: {
+  firstname: {
     type: String,
     required: true,
     trim: true,
   },
+  lastname: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  age: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 150,
+  },
+
   email: {
     type: String,
     required: true,
@@ -65,8 +77,8 @@ app.get("/", (req, res) => {
 
 app.post("/api/users/register", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) {
+    const { firstName, lastName, age, email, password } = req.body;
+    if (!firstName || !lastName || !age || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -82,14 +94,26 @@ app.post("/api/users/register", async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ name, email, password: hashedPassword });
+    const user = new User({
+      firstName,
+      lastName,
+      age,
+      email,
+      password: hashedPassword,
+    });
 
     await user.save();
     console.log("User registered:", email);
 
     res.status(201).json({
       message: "User registered successfully",
-      user: { id: user._id, name: user.name, email: user.email },
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        age: user.age,
+        email: user.email,
+      },
     });
   } catch (error) {
     console.error("Error registering user:", error);
@@ -125,8 +149,11 @@ app.post("/api/users/login", async (req, res) => {
       message: "Login successful",
       user: {
         id: user._id,
-        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        age: user.age,
         email: user.email,
+        bookmarks: user.bookmarks || [],
         createdAt: user.createdAt,
       },
     });
