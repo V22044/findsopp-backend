@@ -153,7 +153,7 @@ app.post("/api/users/login", async (req, res) => {
         lastName: user.lastName,
         age: user.age,
         email: user.email,
-        bookmarks: user.bookmarks || [],
+        BookmarkedOpportunities: user.BookmarkedOpportunities || [],
         createdAt: user.createdAt,
       },
     });
@@ -188,6 +188,66 @@ app.get("/api/users/profile", async (req, res) => {
     res
       .status(500)
       .json({ message: "Server error fetching profile", error: error.message });
+  }
+});
+
+// Add a bookmark
+app.patch("/api/users/bookmark/add", async (req, res) => {
+  try {
+    const { email, jobID } = req.body;
+
+    if (!email || !jobID) {
+      return res.status(400).json({ message: "Email and jobID are required" });
+    }
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $addToSet: { BookmarkedOpportunities: jobID } }, //Prevent duplicates
+      { new: true },
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log(`Bookmark added: ${email} -> ${jobID}`);
+    res.json({
+      message: "Bookmark added",
+      BookmarkedOpportunities: user.BookmarkedOpportunities,
+    });
+  } catch (error) {
+    console.error("Error adding bookmark:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Remove a bookmark
+app.patch("/api/users/bookmark/remove", async (req, res) => {
+  try {
+    const { email, jobID } = req.body;
+
+    if (!email || !jobID) {
+      return res.status(400).json({ message: "Email and jobID are required" });
+    }
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $pull: { BookmarkedOpportunities: jobID } },
+      { new: true },
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log(`Bookmark removed: ${email} -> ${jobID}`);
+    res.json({
+      message: "Bookmark removed",
+      BookmarkedOpportunities: user.BookmarkedOpportunities,
+    });
+  } catch (error) {
+    console.error("Error removing bookmark:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 
