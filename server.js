@@ -1,4 +1,3 @@
-//This file is set up with the help of AI, and is the backend server for the application. It handles user registration, login, and profile retrieval, as well as serving job opportunities data. The server uses Express for routing, Mongoose for MongoDB interactions, and bcrypt for password hashing.
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -188,6 +187,44 @@ app.get("/api/users/profile", async (req, res) => {
     res
       .status(500)
       .json({ message: "Server error fetching profile", error: error.message });
+  }
+});
+
+// Update user detail
+app.patch("/api/users/update", async (req, res) => {
+  try {
+    const { email, newEmail, password } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const updates = {};
+    if (newEmail) updates.email = newEmail.toLowerCase().trim();
+    if (password) {
+      if (password.length < 6) {
+        return res
+          .status(400)
+          .json({ message: "Password must be at least 6 characters" });
+      }
+      updates.password = await bcrypt.hash(password, 10);
+    }
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $set: updates },
+      { new: true },
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log("User updated:", email);
+    res.json({ message: "User updated successfully", user });
+  } catch (error) {
+    console.error("Error updating user:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 
