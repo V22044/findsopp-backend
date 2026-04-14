@@ -159,6 +159,7 @@ app.post("/api/users/register", async (req, res) => {
         lastName: user.lastName,
         age: user.age,
         email: user.email,
+        interestList: user.interestList || [],
       },
     });
   } catch (error) {
@@ -200,6 +201,7 @@ app.post("/api/users/login", async (req, res) => {
         age: user.age,
         email: user.email,
         BookmarkedOpportunities: user.BookmarkedOpportunities || [],
+        interestList: user.interestList || [],
         createdAt: user.createdAt,
       },
     });
