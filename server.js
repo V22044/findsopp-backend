@@ -109,11 +109,9 @@ app.post("/api/users/register", async (req, res) => {
 
     // Under-18 must supply a parent/guardian email
     if (ageNum < 18 && !parentEmail) {
-      return res
-        .status(400)
-        .json({
-          message: "Parent/guardian email is required for users under 18",
-        });
+      return res.status(400).json({
+        message: "Parent/guardian email is required for users under 18",
+      });
     }
 
     const existingUser = await User.findOne({ email });
@@ -329,6 +327,41 @@ app.patch("/api/users/bookmark/remove", async (req, res) => {
     });
   } catch (error) {
     console.error("Error removing bookmark:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Update interest list
+app.patch("/api/users/interests", async (req, res) => {
+  try {
+    const { email, interestList } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+    if (!Array.isArray(interestList) || interestList.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Please provide at least one interest" });
+    }
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $set: { interestList } },
+      { new: true },
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log("Interests updated for:", email);
+    res.json({
+      message: "Interests updated successfully",
+      interestList: user.interestList,
+    });
+  } catch (error) {
+    console.error("Error updating interests:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
