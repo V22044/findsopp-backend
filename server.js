@@ -372,6 +372,29 @@ app.patch("/api/users/interests", async (req, res) => {
   }
 });
 
+// Check if user met the requirement to apply to the opportunities
+app.get("/api/users/approval-status", async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const record = await Underage.findOne({ userId });
+
+    if (!record) {
+      // Not in underage table and is 18+ user = allow
+      return res.json({ blocked: false });
+    }
+
+    if (record.isVerified === false) {
+      // In underage table AND not verified = block
+      return res.json({ blocked: true });
+    }
+
+    // In underage table AND verified = allow
+    return res.json({ blocked: false });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
 // error handler
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint not found" });
