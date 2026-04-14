@@ -52,6 +52,10 @@ const userIndex = new mongoose.Schema({
     type: [Number],
     default: [],
   },
+  interestList: {
+    type: [String],
+    default: [],
+  },
   createdAt: {
     type: Date,
     default: Date.now,
