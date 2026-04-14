@@ -59,6 +59,29 @@ const userIndex = new mongoose.Schema({
 });
 const User = mongoose.model("User", userIndex);
 
+const underageIndex = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+    },
+    p_email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { timestamps: true },
+);
+const Underage = mongoose.model("Underage", underageIndex);
+
 app.get("/", (req, res) => {
   res.json({
     message: "API is running",
@@ -76,9 +99,21 @@ app.get("/", (req, res) => {
 
 app.post("/api/users/register", async (req, res) => {
   try {
-    const { firstName, lastName, age, email, password } = req.body;
+    const { firstName, lastName, age, email, password, parentEmail } = req.body;
+
     if (!firstName || !lastName || !age || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const ageNum = parseInt(age);
+
+    // Under-18 must supply a parent/guardian email
+    if (ageNum < 18 && !parentEmail) {
+      return res
+        .status(400)
+        .json({
+          message: "Parent/guardian email is required for users under 18",
+        });
     }
 
     const existingUser = await User.findOne({ email });
@@ -96,13 +131,23 @@ app.post("/api/users/register", async (req, res) => {
     const user = new User({
       firstName,
       lastName,
-      age,
+      age: ageNum,
       email,
       password: hashedPassword,
     });
 
     await user.save();
     console.log("User registered:", email);
+
+    // If under 18, create a linked record in the underage collection
+    if (ageNum < 18) {
+      await Underage.create({
+        userId: user._id,
+        p_email: parentEmail.trim().toLowerCase(),
+        isVerified: false,
+      });
+      console.log("Underage record created for:", email);
+    }
 
     res.status(201).json({
       message: "User registered successfully",
