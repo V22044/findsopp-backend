@@ -1,6 +1,8 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
@@ -63,6 +65,7 @@ const userIndex = new mongoose.Schema({
 });
 const User = mongoose.model("User", userIndex);
 
+// Underage user index
 const underageIndex = new mongoose.Schema(
   {
     userId: {
@@ -77,14 +80,43 @@ const underageIndex = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
   },
   { timestamps: true },
 );
 const Underage = mongoose.model("Underage", underageIndex);
+
+// Approval request index
+const approvalRequestSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    jobID: { type: Number, required: true },
+    opportunity: { type: Object, required: true }, // snapshot of the opportunity
+    token: { type: String, required: true, unique: true },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+  },
+  { timestamps: true },
+);
+
+const ApprovalRequest = mongoose.model(
+  "ApprovalRequest",
+  approvalRequestSchema,
+);
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 app.get("/", (req, res) => {
   res.json({
@@ -146,7 +178,6 @@ app.post("/api/users/register", async (req, res) => {
       await Underage.create({
         userId: user._id,
         p_email: parentEmail.trim().toLowerCase(),
-        isVerified: false,
       });
       console.log("Underage record created for:", email);
     }
@@ -372,26 +403,150 @@ app.patch("/api/users/interests", async (req, res) => {
   }
 });
 
-// Check if user met the requirement to apply to the opportunities
+// POST /api/apply-request
+// Called every time an underage user taps Apply
+app.post("/api/apply-request", async (req, res) => {
+  try {
+    const { userId, opportunity } = req.body;
+
+    const underageRecord = await Underage.findOne({ userId });
+    if (!underageRecord) {
+      return res.status(404).json({ message: "No underage record found" });
+    }
+
+    // Check if there's already a pending request for this job
+    const existing = await ApprovalRequest.findOne({
+      userId,
+      jobID: opportunity.jobID,
+      status: "pending",
+    });
+    if (existing) {
+      return res.json({ alreadySent: true });
+    }
+
+    // Check if already approved for this specific job
+    const alreadyApproved = await ApprovalRequest.findOne({
+      userId,
+      jobID: opportunity.jobID,
+      status: "approved",
+    });
+    if (alreadyApproved) {
+      return res.json({ approved: true });
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+
+    await ApprovalRequest.create({
+      userId,
+      jobID: opportunity.jobID,
+      opportunity,
+      token,
+      status: "pending",
+    });
+
+    const user = await User.findById(userId);
+    const approveLink = `${process.env.SERVER_URL}/api/approve/${token}`;
+
+    const htmlEmail = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <h2 style="color: #1a1a2e;">Parental Approval Required</h2>
+        <p>Your child <strong>${user.firstName} ${user.lastName}</strong> wants to volunteer for:</p>
+
+        <div style="background: #f4f4f4; border-radius: 8px; padding: 16px; margin: 20px 0;">
+          <h3 style="margin: 0 0 8px;">${opportunity.title}</h3>
+          <p style="margin: 4px 0;">🏢 <strong>Organisation:</strong> ${opportunity.organisation}</p>
+          <p style="margin: 4px 0;">📅 <strong>Date:</strong> ${opportunity.date}</p>
+          <p style="margin: 4px 0;">⏰ <strong>Time:</strong> ${opportunity.time} (${opportunity.duration})</p>
+          <p style="margin: 4px 0;">📍 <strong>Location:</strong> ${opportunity.location}</p>
+          <p style="margin: 12px 0 0;">${opportunity.description}</p>
+        </div>
+
+        <a href="${approveLink}"
+           style="display: inline-block; background-color: #22a861; color: white; padding: 14px 28px;
+                  border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold;">
+          ✅ Approve This Application
+        </a>
+
+        <p style="color: #999; font-size: 12px; margin-top: 20px;">
+          If you did not expect this, you can safely ignore this email.
+        </p>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: `"Volunteer App" <${process.env.EMAIL_USER}>`,
+      to: underageRecord.p_email,
+      subject: `Approval needed: ${user.firstName} wants to volunteer at ${opportunity.organisation}`,
+      html: htmlEmail,
+    });
+
+    res.json({ emailSent: true });
+  } catch (error) {
+    console.error("Apply request error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// GET /api/approve/:token  — parent clicks the link
+app.get("/api/approve/:token", async (req, res) => {
+  try {
+    const record = await ApprovalRequest.findOne({ token: req.params.token });
+    if (!record) {
+      return res.status(404).send("<h2>Invalid or expired approval link.</h2>");
+    }
+
+    record.status = "approved";
+    await record.save();
+
+    const opp = record.opportunity;
+    res.send(`
+      <div style="font-family: Arial, sans-serif; text-align: center; padding: 60px 20px;">
+        <h1 style="color: #22a861;">✅ Approved!</h1>
+        <p style="font-size: 18px;">You've approved the application for <strong>${opp.title}</strong>.</p>
+        <p>Your child can now complete their application in the app.</p>
+      </div>
+    `);
+  } catch (error) {
+    res.status(500).send("<h2>Something went wrong.</h2>");
+  }
+});
+
+// GET /api/users/approval-status?userId=...&jobID=...
+// Now checks per-job approval
 app.get("/api/users/approval-status", async (req, res) => {
   try {
-    const { userId } = req.query;
-    const record = await Underage.findOne({ userId });
+    const { userId, jobID } = req.query;
 
-    if (!record) {
-      // Not in underage table and is 18+ user = allow
-      return res.json({ blocked: false });
+    // If not underage, never blocked
+    const underageRecord = await Underage.findOne({ userId });
+    if (!underageRecord) {
+      return res.json({ blocked: false, status: "not_underage" });
     }
 
-    if (record.isVerified === false) {
-      // In underage table AND not verified = block
-      return res.json({ blocked: true });
+    if (!jobID) {
+      return res.json({ blocked: true, status: "underage" });
     }
 
-    // In underage table AND verified = allow
-    return res.json({ blocked: false });
+    const request = await ApprovalRequest.findOne({
+      userId,
+      jobID: Number(jobID),
+    });
+
+    if (!request) {
+      return res.json({ blocked: true, status: "no_request" });
+    }
+
+    if (request.status === "approved") {
+      return res.json({ blocked: false, status: "approved" });
+    }
+
+    if (request.status === "pending") {
+      return res.json({ blocked: true, status: "pending" });
+    }
+
+    res.json({ blocked: true, status: request.status });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
