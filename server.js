@@ -550,6 +550,17 @@ app.get("/api/users/approval-status", async (req, res) => {
   }
 });
 
+app.get("/api/users/parent-email", async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const record = await Underage.findOne({ userId });
+    if (!record) return res.status(404).json({ message: "Not found" });
+    res.json({ p_email: record.p_email });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // error handler
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint not found" });
