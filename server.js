@@ -94,7 +94,7 @@ const approvalRequestSchema = new mongoose.Schema(
       required: true,
     },
     jobID: { type: Number, required: true },
-    opportunity: { type: Object, required: true }, // snapshot of the opportunity
+    opportunity: { type: Object, required: true },
     token: { type: String, required: true, unique: true },
     status: {
       type: String,
